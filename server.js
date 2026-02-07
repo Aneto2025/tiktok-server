@@ -6,11 +6,13 @@ const app = express();
 app.use(cors()); 
 app.use(express.json());
 
-// --- ALTERAÇÃO 1: SEGURANÇA ---
-// Tenta pegar a chave do painel do Render. Se não achar (rodando local), usa a string vazia.
+// --- CONFIGURAÇÃO SEGURA ---
+// Tenta pegar a chave do painel do Render. Se não achar, usa string vazia.
 const API_KEY = process.env.API_KEY || ''; 
-const API_HOST = 'tiktok-downloader-download-tiktok-videos-without-watermark.p.rapidapi.com'; 
-// *Certifique-se que esse host está correto conforme o playground que você me mostrou.*
+
+// Atualizado para o novo Host de "No Watermark"
+// (Você pode também usar apenas 'process.env.API_HOST' se já configurou no Render)
+const API_HOST = process.env.API_HOST || 'tiktok-video-no-watermark2.p.rapidapi.com'; 
 
 app.get('/api/status', (req, res) => {
     res.json({ status: 'Online' });
@@ -24,39 +26,47 @@ app.post('/api/download', async (req, res) => {
     }
 
     try {
-        // Se estiver rodando local e não tiver chave no .env, para aqui.
-        if (!API_KEY && process.env.NODE_ENV !== 'production') {
-             return res.status(500).json({ error: 'API Key não configurada no Render' });
+        // Verificação de segurança para garantir que a chave foi configurada no Render
+        if (!API_KEY) {
+            return res.status(500).json({ error: 'API Key não configurada no Render' });
         }
 
+        // --- CÓDIGO ATUALIZADO PARA MÉTODO POST ---
         const options = {
-            method: 'GET',
-            url: `https://${API_HOST}/vid/index`, 
-            params: { url: url },
+            method: 'POST', 
+            url: `https://${API_HOST}/`, // URL raiz
             headers: {
+                'Content-Type': 'application/x-www-form-urlencoded', // Cabeçalho obrigatório para POST
                 'X-RapidAPI-Key': API_KEY,
                 'X-RapidAPI-Host': API_HOST
+            },
+            // Envio da URL via Query String (comum nessa API)
+            params: { 
+                url: url 
             }
         };
 
         const response = await axios.request(options);
         
-        // Retorna os dados para o seu front-end
+        // --- TRATAMENTO DE RESPOSTA ROBUSTO ---
+        // Algumas APIs retornam os dados em response.data.data, outras direto em response.data
+        // Isso garante que você achará o link do vídeo independente do formato.
+        const dataObj = response.data.data || response.data;
+
         res.json({
             success: true,
-            videoUrl: response.data.video || response.data.play, 
-            cover: response.data.cover || response.data.origin_cover,
-            title: response.data.title || "Vídeo baixado",
-            author: response.data.author?.nickname || "Usuário"
+            videoUrl: dataObj.play || dataObj.video || dataObj.wmplay, // Tenta pegar o link sem marca d'água
+            cover: dataObj.cover || dataObj.origin_cover,
+            title: dataObj.title || "Vídeo baixado",
+            author: dataObj.author?.nickname || dataObj.author || "Usuário"
         });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Erro ao processar vídeo.' });
+        console.error('Erro na API:', error.response ? error.response.data : error.message);
+        res.status(500).json({ error: 'Erro ao processar vídeo. Verifique a URL.' });
     }
 });
 
-// --- ALTERAÇÃO 2: PORTA DINÂMICA ---
-// O Render manda a porta pela variável de ambiente PORT.
+// --- PORTA DINÂMICA ---
 const PORT = process.env.PORT || 3000; 
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
